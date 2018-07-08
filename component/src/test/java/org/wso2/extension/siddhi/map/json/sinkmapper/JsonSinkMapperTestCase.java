@@ -1054,4 +1054,88 @@ public class JsonSinkMapperTestCase {
         //unsubscribe from "inMemory" broker per topic
         InMemoryBroker.unsubscribe(subscriberWSO2);
     }
+
+    @Test
+    public void jsonSinkMapperTestCasexx() throws InterruptedException {
+        log.info("JsonSinkMapperTestCase 5");
+        List<Object> onMessageList = new ArrayList<Object>();
+        InMemoryBroker.Subscriber subscriberWSO2 = new InMemoryBroker.Subscriber() {
+            @Override
+            public void onMessage(Object msg) {
+                wso2Count.incrementAndGet();
+                onMessageList.add(msg);
+            }
+            @Override
+            public String getTopic() {
+                return "WSO2";
+            }
+        };
+        InMemoryBroker.Subscriber subscriberIBM = new InMemoryBroker.Subscriber() {
+            @Override
+            public void onMessage(Object msg) {
+                ibmCount.incrementAndGet();
+                onMessageList.add(msg);
+            }
+            @Override
+            public String getTopic() {
+                return "IBM";
+            }
+        };
+        //subscribe to "inMemory" broker per topic
+        InMemoryBroker.subscribe(subscriberWSO2);
+        InMemoryBroker.subscribe(subscriberIBM);
+        String streams = "" +
+                "@App:name('TestSiddhiApp') " +
+                "define stream FooStream (symbol string, price float, volume int); " +
+                "@sink(type='inMemory', topic='{{symbol}}', @map(type='json', validate.json='true', " +
+                "enclosing.element=\"$.portfolio.company\", " +
+                "@payload(\"\"\"{\n" +
+                "   \"Stock Data\":{\n" +
+                "      \"Symbol\":\"{{symbol}}\",\n" +
+                "      \"Price\":{{price}},\n" +
+                "      \"Volume\":{{volume}}\n" +
+                "   }\n" +
+                "}\"\"\"))) " +
+                "define stream BarStream (symbol string, price float, volume int); ";
+        String query = "" +
+                "from FooStream " +
+                "select * " +
+                "insert into BarStream; ";
+        SiddhiManager siddhiManager = new SiddhiManager();
+        SiddhiAppRuntime siddhiAppRuntime = siddhiManager.createSiddhiAppRuntime(streams + query);
+        InputHandler stockStream = siddhiAppRuntime.getInputHandler("FooStream");
+        siddhiAppRuntime.start();
+        stockStream.send(new Object[]{"WSO2", 55.6f, 10000});
+//        stockStream.send(new Object[]{"IBM", 75.6f, 100});
+//        stockStream.send(new Object[]{"WSO2", 57.6f, 100});
+        SiddhiTestHelper.waitForEvents(waitTime, 2, wso2Count, timeout);
+        SiddhiTestHelper.waitForEvents(waitTime, 1, ibmCount, timeout);
+        //assert event count
+        AssertJUnit.assertEquals("Incorrect number of events consumed!", 2, wso2Count.get());
+        AssertJUnit.assertEquals("Incorrect number of events consumed!", 1, ibmCount.get());
+        //assert custom json
+        AssertJUnit.assertEquals("Mapping incorrect!", "{\"portfolio\":{\"company\":{\n" +
+                "   \"Stock Data\":{\n" +
+                "      \"Symbol\":\"WSO2\",\n" +
+                "      \"Price\":55.6\n" +
+                "   }\n" +
+                "}}}", onMessageList.get(0).toString());
+        AssertJUnit.assertEquals("Mapping incorrect!", "{\"portfolio\":{\"company\":{\n" +
+                "   \"Stock Data\":{\n" +
+                "      \"Symbol\":\"IBM\",\n" +
+                "      \"Price\":75.6\n" +
+                "   }\n" +
+                "}}}", onMessageList.get(1).toString());
+        AssertJUnit.assertEquals("Mapping incorrect!", "{\"portfolio\":{\"company\":{\n" +
+                "   \"Stock Data\":{\n" +
+                "      \"Symbol\":\"WSO2\",\n" +
+                "      \"Price\":57.6\n" +
+                "   }\n" +
+                "}}}", onMessageList.get(2).toString());
+        siddhiAppRuntime.shutdown();
+
+        //unsubscribe from "inMemory" broker per topic
+        InMemoryBroker.unsubscribe(subscriberWSO2);
+        InMemoryBroker.unsubscribe(subscriberIBM);
+    }
 }

@@ -117,10 +117,12 @@ public class JsonSinkMapper extends SinkMapper {
     private static final String JSON_EVENT_START_SYMBOL = "{";
     private static final String JSON_EVENT_END_SYMBOL = "}";
     private static final String UNDEFINED = "undefined";
+    private static final String PUBLISH_AS_CHUNKS = "publish.as.chunks";
 
     private String[] attributeNameArray;
     private String enclosingElement = null;
     private boolean isJsonValidationEnabled = false;
+    private boolean publishAsChunks = true;
 
 
     @Override
@@ -150,6 +152,9 @@ public class JsonSinkMapper extends SinkMapper {
         enclosingElement = optionHolder.validateAndGetStaticValue(ENCLOSING_ELEMENT_IDENTIFIER, null);
         isJsonValidationEnabled = Boolean.parseBoolean(optionHolder
                 .validateAndGetStaticValue(JSON_VALIDATION_IDENTIFIER, "false"));
+        publishAsChunks = Boolean.parseBoolean(optionHolder.validateAndGetStaticValue(PUBLISH_AS_CHUNKS, "true"));
+
+
 
         //if @payload() is added there must be at least 1 element in it, otherwise a SiddhiParserException raised
         if (payloadTemplateBuilderMap != null && payloadTemplateBuilderMap.size() != 1) {
@@ -176,12 +181,18 @@ public class JsonSinkMapper extends SinkMapper {
                     payloadTemplateBuilderMap.get(payloadTemplateBuilderMap.keySet().iterator().next())));
         }
 
-        if (!isJsonValidationEnabled) {
-            sinkListener.publish(sb.toString());
-        } else if (isValidJson(sb.toString())) {
-            sinkListener.publish(sb.toString());
+        if (publishAsChunks) {
+            if (!isJsonValidationEnabled) {
+                sinkListener.publish(sb.toString());
+            } else if (isValidJson(sb.toString())) {
+                sinkListener.publish(sb.toString());
+            } else {
+                log.error("Invalid json string : " + sb.toString() + ". Hence dropping the message.");
+            }
         } else {
-            log.error("Invalid json string : " + sb.toString() + ". Hence dropping the message.");
+            for (Event event : events) {
+                this.mapAndSend(event, optionHolder, payloadTemplateBuilderMap, sinkListener);
+            }
         }
     }
 
